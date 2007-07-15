@@ -86,13 +86,13 @@ namespace InventoryViewer
                     {
                         case AssetType.LSLText:
                             AssetScript script = new AssetScript(transfer.AssetID);
-                            script.AssetData = transfer.AssetData;
+                            script.SetEncodedData(transfer.AssetData);
                             Console.WriteLine("Script source:");
                             Console.WriteLine(script.Source);
                             break;
                         case AssetType.Notecard:
                             AssetNotecard note = new AssetNotecard(transfer.AssetID);
-                            note.AssetData = transfer.AssetData;
+                            note.SetEncodedData(transfer.AssetData);
                             Console.WriteLine("Notecard text:");
                             Console.WriteLine(note.Text);
                             break;
