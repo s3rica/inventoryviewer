@@ -44,14 +44,13 @@ namespace InventoryViewer
         }
     }
 
-    public class InventoryTreeModel : TreeModelBase
+    public class InventoryTreeModel : ITreeModel
     {
         // Fields
         private Dictionary<InventoryType, object> DisplayedTypes;
         private Inventory Inventory;
         private InventoryNode InventoryRoot;
         private InventoryManager Manager;
-        private Dictionary<Node, InventoryNode> NodeMap;
         private Dictionary<InventoryNode, Node> ReverseMap;
         private Dictionary<InventoryFolder, object> DownloadedFolders;
 
@@ -62,6 +61,7 @@ namespace InventoryViewer
 
         public event EventHandler<TreeModelEventArgs> NodesRemoved;
 
+        public event EventHandler<TreePathEventArgs> StructureChanged;
         // Methods
         public InventoryTreeModel(InventoryManager manager, Inventory inventory, InventoryNode root)
             : this(manager, inventory, root, (InventoryType[])Enum.GetValues(typeof(InventoryType)))
@@ -78,11 +78,11 @@ namespace InventoryViewer
             this.Inventory.OnInventoryRemoved += new Inventory.InventoryRemoved(this.Inventory_OnInventoryRemoved);
             inventory.OnInventoryUpdated += new Inventory.InventoryUpdated(this.inventory_OnInventoryUpdated);
             this.Inventory.OnInventoryAdded += new Inventory.InventoryAdded(this.Inventory_OnInventoryAdded);
-            this.NodeMap = new Dictionary<Node, InventoryNode>();
+            //this.NodeMap = new Dictionary<Node, InventoryNode>();
             this.ReverseMap = new Dictionary<InventoryNode, Node>();
             Node rootNode = new Node("My Inventory");
             rootNode.Tag = this.InventoryRoot.Data;
-            this.NodeMap.Add(rootNode, this.InventoryRoot);
+            //this.NodeMap.Add(rootNode, this.InventoryRoot);
             this.ReverseMap.Add(this.InventoryRoot, rootNode);
             this.DisplayedTypes = new Dictionary<InventoryType, object>(displayedTypes.Length);
             foreach (InventoryType type in displayedTypes)
@@ -91,7 +91,7 @@ namespace InventoryViewer
             }
         }
 
-        public override IEnumerable GetChildren(TreePath treePath)
+        public IEnumerable GetChildren(TreePath treePath)
         {
             List<Node> children = new List<Node>();
             if (treePath.IsEmpty())
@@ -99,13 +99,16 @@ namespace InventoryViewer
                 children.Add(this.ReverseMap[this.InventoryRoot]);
                 return children;
             }
-            InventoryNode invNode = this.NodeMap[treePath.LastNode as Node];
+            Node lastNode = treePath.LastNode as Node;
+            InventoryBase invBase = lastNode.Tag as InventoryBase;
+            InventoryNode invNode = Inventory.GetNodeFor(invBase.UUID);//this.NodeMap[treePath.LastNode as Node];
             if (invNode.Data is InventoryFolder)
             {
                 if (!DownloadedFolders.ContainsKey(invNode.Data as InventoryFolder))
                 {
-                    this.Manager.RequestFolderContents(invNode.Data.UUID, true, true, false, InventorySortOrder.ByName);
-                    DownloadedFolders.Add(invNode.Data as InventoryFolder, null);
+                    Manager.BeginRequestFolderContents(invNode.Data.UUID, Inventory.Owner, true, true, true, InventorySortOrder.ByName, null, null);
+                    //this.Manager.RequestFolderContents(invNode.Data.UUID, true, true, false, InventorySortOrder.ByName);
+                    //DownloadedFolders.Add(invNode.Data as InventoryFolder, null);
                 }
                 foreach (InventoryNode child in invNode.Nodes.Values)
                 {
@@ -118,7 +121,7 @@ namespace InventoryViewer
                         Node treeChild = new Node(child.Data.Name);
                         treeChild.Tag = child.Data;
                         this.ReverseMap.Add(child, treeChild);
-                        this.NodeMap.Add(treeChild, child);
+                        //this.NodeMap.Add(treeChild, child);
                         Node parent = this.ReverseMap[child.Parent];
                         parent.Nodes.Add(treeChild);
                     }
@@ -146,11 +149,11 @@ namespace InventoryViewer
         [Obsolete]
         private void InitializeModel()
         {
-            this.NodeMap = new Dictionary<Node, InventoryNode>();
+            //this.NodeMap = new Dictionary<Node, InventoryNode>();
             this.ReverseMap = new Dictionary<InventoryNode, Node>();
             Node rootNode = new Node("My Inventory");
             rootNode.Tag = this.InventoryRoot.Data;
-            this.NodeMap.Add(rootNode, this.InventoryRoot);
+            //this.NodeMap.Add(rootNode, this.InventoryRoot);
             this.ReverseMap.Add(this.InventoryRoot, rootNode);
             this.PopulateNode(this.InventoryRoot, rootNode);
         }
@@ -160,12 +163,13 @@ namespace InventoryViewer
             Node node = new Node(obj.Name);
             node.Parent = this.NodeForUUID(obj.ParentUUID);
             node.Tag = obj;
-            InventoryNode invNode = this.NodeMap[node.Parent].Nodes[obj.UUID];
+            InventoryNode invNode = Inventory.GetNodeFor(obj.UUID);
             this.ReverseMap.Add(invNode, node);
-            this.NodeMap.Add(node, invNode);
+            //this.NodeMap.Add(node, invNode);
+            Console.WriteLine("Added {0}", obj.Name);
             if (this.NodesInserted != null)
             {
-                this.NodesInserted(null, new TreeModelEventArgs(this.GetPath(node.Parent), new object[] { node }));
+                this.NodesInserted(this, new TreeModelEventArgs(this.GetPath(node.Parent), new int[] { 0 }, new object[] { node }));
             }
         }
 
@@ -174,8 +178,8 @@ namespace InventoryViewer
             Node node = this.NodeForUUID(obj.UUID);
             if (node != null)
             {
-                InventoryNode invNode = this.NodeMap[node];
-                this.NodeMap.Remove(node);
+                InventoryNode invNode = Inventory.GetNodeFor(obj.UUID);// this.NodeMap[node];
+                //this.NodeMap.Remove(node);
                 this.ReverseMap.Remove(invNode);
                 if (this.NodesRemoved != null)
                 {
@@ -207,21 +211,22 @@ namespace InventoryViewer
             }
         }
 
-        public override bool IsLeaf(TreePath treePath)
+        public bool IsLeaf(TreePath treePath)
         {
             return !(((Node)treePath.LastNode).Tag is InventoryFolder);
         }
 
         private Node NodeForUUID(LLUUID uuid)
         {
-            foreach (KeyValuePair<InventoryNode, Node> pair in this.ReverseMap)
+            InventoryNode invNode = Inventory.GetNodeFor(uuid);
+            Node node;
+            if (!ReverseMap.TryGetValue(invNode, out node))
             {
-                if (pair.Key.Data.UUID == uuid)
-                {
-                    return pair.Value;
-                }
+                node = new Node(invNode.Data.Name);
+                node.Tag = invNode.Data;
+                ReverseMap.Add(invNode, node);
             }
-            return null;
+            return node;
         }
 
         [Obsolete]
@@ -231,7 +236,7 @@ namespace InventoryViewer
             {
                 Node treeChild = new Node(invChild.Data.Name);
                 treeChild.Tag = invChild.Data;
-                this.NodeMap.Add(treeChild, invChild);
+                //this.NodeMap.Add(treeChild, invChild);
                 this.ReverseMap.Add(invChild, treeChild);
                 treeParent.Nodes.Add(treeChild);
                 if (invChild.Nodes.Count > 0)
