@@ -104,12 +104,7 @@ namespace InventoryViewer
             InventoryNode invNode = Inventory.GetNodeFor(invBase.UUID);//this.NodeMap[treePath.LastNode as Node];
             if (invNode.Data is InventoryFolder)
             {
-                if (!DownloadedFolders.ContainsKey(invNode.Data as InventoryFolder))
-                {
-                    Manager.BeginRequestFolderContents(invNode.Data.UUID, Inventory.Owner, true, true, true, InventorySortOrder.ByName, null, null);
-                    //this.Manager.RequestFolderContents(invNode.Data.UUID, true, true, false, InventorySortOrder.ByName);
-                    //DownloadedFolders.Add(invNode.Data as InventoryFolder, null);
-                }
+                Manager.BeginRequestFolderContents(invNode.Data.UUID, Inventory.Owner, true, true, false, InventorySortOrder.ByName, null, null);
                 foreach (InventoryNode child in invNode.Nodes.Values)
                 {
                     if ((child.Data is InventoryItem) && !this.DisplayedTypes.ContainsKey((child.Data as InventoryItem).InventoryType))

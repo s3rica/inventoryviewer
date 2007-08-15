@@ -16,3 +16,5 @@ obj\Debug\InventoryViewer.pdb
 bin\Release\CookComputing.XmlRpcV2.dll
 bin\Release\libsecondlife.pdb
 bin\Debug\CookComputing.XmlRpcV2.dll
+bin\Release\Aga.Controls.dll
+bin\Release\libsecondlife.dll
