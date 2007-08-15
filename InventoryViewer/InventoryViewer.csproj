@@ -5,7 +5,7 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProductVersion>8.0.50727</ProductVersion>
     <SchemaVersion>2.0</SchemaVersion>
-    <ProjectGuid>{E1F7AE61-0999-4928-9220-E05F1315624D}</ProjectGuid>
+    <ProjectGuid>{1A03F0DC-313B-423A-9374-88A06B7C74A6}</ProjectGuid>
     <OutputType>Exe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>InventoryViewer</RootNamespace>
@@ -44,7 +44,7 @@
   <ItemGroup>
     <Reference Include="Aga.Controls, Version=1.6.0.0, Culture=neutral, PublicKeyToken=fcc90fbf924463a3, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>F:\Documents and Settings\Frank_Limited\Desktop\TreeViewAdv_1.6.0.0\Aga.Controls\bin\Release\Aga.Controls.dll</HintPath>
+      <HintPath>..\..\TreeViewAdv_1.6.0.0\Aga.Controls\bin\Release\Aga.Controls.dll</HintPath>
     </Reference>
     <Reference Include="libsecondlife, Version=0.9.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
