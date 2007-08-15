@@ -1,419 +1,529 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.IO;
-using System.Text;
-using System.Threading;
 using System.Windows.Forms;
 using Aga.Controls.Tree;
-using Aga.Controls.Tree.NodeControls;
 using libsecondlife;
+using System.Collections;
+using Aga.Controls.Tree.NodeControls;
+using System.Collections.ObjectModel;
 
 namespace InventoryViewer
 {
-    public class InventoryContextMenu : ContextMenuStrip
+    public class InventoryDirectorySelector
     {
-        private ToolStripMenuItem[] AllOptions;
-        private ToolStripMenuItem[] ItemOptions;
-        private ToolStripMenuItem[] FolderOptions;
+        // Fields
+        private Form form = new Form();
+        private InventoryTreeView treeView;
 
-        private List<InventoryBase> Inventory;
-        private InventoryManager Manager;
-        private AssetManager AssetManager;
-        private SecondLife Client;
-        private Dictionary<LLUUID, InventoryItem> AssetTransfers = new Dictionary<LLUUID, InventoryItem>();
-        private Dictionary<LLUUID, InventoryItem> PrintTransfers = new Dictionary<LLUUID, InventoryItem>();
-        public InventoryContextMenu(SecondLife client, InventoryManager manager, AssetManager assets, List<InventoryBase> inventory)
+        // Methods
+        public InventoryDirectorySelector(InventoryManager manager, Inventory inventory, InventoryNode root)
         {
-            AllOptions = new ToolStripMenuItem[] {
-                new ToolStripMenuItem("Delete", null, new EventHandler(DeleteItems)),
-                new ToolStripMenuItem("General Info", null, new EventHandler(GenericInfo)),
-            };
-
-            ItemOptions = new ToolStripMenuItem[] {
-                new ToolStripMenuItem("Print Asset", null, new EventHandler(PrintAsset)),
-                new ToolStripMenuItem("Save Asset...", null, new EventHandler(SaveItems)),
-                new ToolStripMenuItem("Item Info", null, new EventHandler(ItemInfo)),
-            };
-
-            FolderOptions = new ToolStripMenuItem[] {
-                //new ToolStripMenuItem("Info", null, new EventHandler(GenericInfo)),
-            };
-
-            this.Inventory = inventory;
-            this.Manager = manager;
-            this.AssetManager = assets;
-            this.Client = client;
-            bool hasItems = false;
-            bool hasFolders = false;
-            foreach (InventoryBase obj in inventory)
-            {
-                hasFolders = hasFolders || obj is InventoryFolder;
-                hasItems = hasItems || obj is InventoryItem;
-            }
-            if (inventory.Count > 0)
-            {
-                List<ToolStripMenuItem> Options = new List<ToolStripMenuItem>(AllOptions.Length + ItemOptions.Length + FolderOptions.Length);
-                Options.AddRange(AllOptions);
-                if (hasFolders && hasItems)
-                {
-                    Console.WriteLine("Showing context menu for multiple item types");
-                }
-                else if (hasFolders)
-                {
-                    Console.WriteLine("Adding context items for folders");
-                    Options.AddRange(FolderOptions);
-                }
-                else if (hasItems)
-                {
-                    Console.WriteLine("Adding context items for items.");
-                    Options.AddRange(ItemOptions);
-                }
-
-                Items.AddRange(Options.ToArray());
-                AssetManager.OnAssetReceived += new AssetManager.AssetReceivedCallback(AssetManager_OnAssetReceived);
-            }
+            this.form.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.treeView = new InventoryTreeView();
+            this.treeView.Model = new InventoryTreeModel(manager, inventory, root, new InventoryType[0]);
+            this.treeView.SelectionMode = TreeSelectionMode.Single;
+            this.form.Controls.Add(this.treeView);
+            Button ok = new Button();
+            ok.Text = "Select";
+            this.form.AcceptButton = ok;
+            this.form.Controls.Add(ok);
+            Button cancel = new Button();
+            cancel.Text = "Cancel";
+            this.form.CancelButton = cancel;
+            this.form.Controls.Add(cancel);
         }
 
-        void AssetManager_OnAssetReceived(AssetDownload transfer, Asset asset)
+        public InventoryFolder ShowSelector()
         {
-            lock (AssetTransfers)
+            if (this.form.ShowDialog() == DialogResult.OK)
             {
-                lock (PrintTransfers)
-                {
-                    if (PrintTransfers.ContainsKey(transfer.ID))
-                    {
-                        InventoryItem item = PrintTransfers[transfer.ID];
-                        if (transfer.Success)
-                        {
-                            Console.WriteLine("Received asset data for {0} ({1})", item.Name, item.UUID);
-                            if (asset is AssetScriptText)
-                            {
-                                AssetScriptText script = asset as AssetScriptText;
-                                Console.WriteLine("Script source:");
-                                Console.WriteLine(script.Source);
-                            }
-                            else if (asset is AssetNotecard)
-                            {
-                                AssetNotecard notecard = asset as AssetNotecard;
-                                Console.WriteLine("Notecard text:");
-                                Console.WriteLine(notecard.Text);
-                            }
-                            else if (asset != null)
-                            {
-                                Console.WriteLine("Unknown asset type: {0}", asset.GetType());
-                            }
-                            else
-                            {
-                                Console.WriteLine("Asset is null!");
-                            }
-                        }
-                        else
-                        {
-                            Console.WriteLine("Asset data retreival failed for {0} ({1})", item.Name, item.UUID);
-                            Console.WriteLine("Status code: {0}", transfer.Status);
-                        }
-
-                        PrintTransfers.Remove(transfer.ID);
-                    }
-                }
-                lock (SaveTransfers)
-                {
-                    if (SaveTransfers.ContainsKey(transfer.ID))
-                    {
-                        DirectoryInfo directory = SaveTransfers[transfer.ID];
-                        if (transfer.Success)
-                        {
-                            if (asset is AssetScriptText)
-                            {
-                                AssetScriptText script = asset as AssetScriptText;
-                                StreamWriter writer = File.CreateText(Path.Combine(directory.FullName, AssetTransfers[transfer.ID].Name + ".lsl"));
-                                writer.Write(script.Source);
-                                writer.Close();
-                                Console.WriteLine(AssetTransfers[transfer.ID].Name + ".lsl saved.");
-                            }
-                            else if (asset is AssetNotecard)
-                            {
-                                AssetNotecard note = asset as AssetNotecard;
-                                FileStream stream = File.Create(Path.Combine(directory.FullName, AssetTransfers[transfer.ID].Name + ".txt"));
-                                byte[] data = note.GetEncodedData();
-                                stream.Write(data, 0, data.Length);
-                                stream.Close();
-                                Console.WriteLine(AssetTransfers[transfer.ID].Name + ".txt saved.");
-                            }
-                            else if (asset != null)
-                            {
-                                Console.WriteLine("Unknown asset type: {0}", asset.GetType());
-                            }
-                            else
-                            {
-                                Console.WriteLine("Asset is null!");
-                            }
-                        }
-                        SaveTransfers.Remove(transfer.ID);
-                    }
-                }
-                AssetTransfers.Remove(transfer.ID);
+                return (this.treeView.SelectedInventory[0] as InventoryFolder);
             }
-        }
-
-        public void PrintAsset(object sender, EventArgs args)
-        {
-            foreach (InventoryBase obj in Inventory)
-            {
-                lock (PrintTransfers)
-                {
-                    InventoryItem item = obj as InventoryItem;
-                    LLUUID transferID = AssetManager.RequestInventoryAsset(item.AssetUUID, item.UUID, LLUUID.Zero, item.OwnerID, item.AssetType, false);
-                    PrintTransfers.Add(transferID, item);
-                }
-            }
-        }
-
-        private Dictionary<LLUUID, DirectoryInfo> SaveTransfers = new Dictionary<LLUUID, DirectoryInfo>();
-        public void SaveItems(object sender, EventArgs args)
-        {
-            string path = Path.Combine(Environment.CurrentDirectory, "inv");
-            if (!Directory.Exists(path))
-                Directory.CreateDirectory(path);
-            DirectoryInfo info = new DirectoryInfo(path);
-            foreach (InventoryBase obj in Inventory)
-            {
-                lock (SaveTransfers)
-                    lock (AssetTransfers)
-                    {
-                        InventoryItem item = (InventoryItem)obj;
-                        LLUUID transferID = AssetManager.RequestInventoryAsset(item.AssetUUID, item.UUID, LLUUID.Zero, item.OwnerID, item.AssetType, false);
-                        SaveTransfers.Add(transferID, info);
-                        AssetTransfers.Add(transferID, item);
-                    }
-            }
-        }
-
-        public void DeleteItems(object sender, EventArgs args)
-        {
-            Console.WriteLine("Deleting:");
-            foreach (InventoryBase obj in Inventory)
-                Console.WriteLine(obj.Name);
-            Manager.Remove(Inventory);
-        }
-
-        public void ItemInfo(object sender, EventArgs args)
-        {
-            Console.WriteLine("Object info:");
-            List<LLUUID> itemIDs = new List<LLUUID>(Inventory.Count);
-            foreach (InventoryBase obj in Inventory)
-            {
-                itemIDs.Add(obj.UUID);
-            }
-            Console.WriteLine("Pre-Fetch!");
-            Manager.FetchInventory(itemIDs);
-            Console.WriteLine("Post-Fetch!");
-            foreach (InventoryBase obj in Inventory) {
-                Console.WriteLine("\tType: {0}", (obj is InventoryFolder ? "Folder" : (obj as InventoryItem).InventoryType.ToString()));
-                Console.WriteLine("\tName: {0}", obj.Name);
-                Console.WriteLine("\tItemID: {0}", obj.UUID);
-                Console.WriteLine("\tParent: {0}", obj.ParentUUID);
-                Console.WriteLine("\tOwner: {0}", obj.OwnerID);
-            }
-        }
-
-        public void GenericInfo(object sender, EventArgs args)
-        {
-            foreach (InventoryBase obj in Inventory)
-            {
-                Console.WriteLine("\tType: {0}", (obj is InventoryFolder ? "Folder" : (obj as InventoryItem).InventoryType.ToString()));
-                Console.WriteLine("\tName: {0}", obj.Name);
-                Console.WriteLine("\tItemID: {0}", obj.UUID);
-                Console.WriteLine("\tParent: {0}", obj.ParentUUID);
-                Console.WriteLine("\tOwner: {0}", obj.OwnerID);
-            }
+            return null;
         }
     }
 
-    
-    public class InventoryWindow
+    public class InventoryTreeModel : TreeModelBase
     {
-        public Form Form {
-            get { return form; }
-        }
-        private Form form;
-        private Dictionary<Node, InventoryNode> NodeMap;
-
-        public ContextMenu ItemContextMenu;
-        public ContextMenu FolderContextMenu;
-
-        private TreeViewAdv Tree;
+        // Fields
+        private Dictionary<InventoryType, object> DisplayedTypes;
         private Inventory Inventory;
+        private InventoryNode InventoryRoot;
         private InventoryManager Manager;
-        private AssetManager AssetManager;
-        private SecondLife Client;
-        public InventoryWindow(SecondLife client)
+        private Dictionary<Node, InventoryNode> NodeMap;
+        private Dictionary<InventoryNode, Node> ReverseMap;
+        private Dictionary<InventoryFolder, object> DownloadedFolders;
+
+        // Events
+        public event EventHandler<TreeModelEventArgs> NodesChanged;
+
+        public event EventHandler<TreeModelEventArgs> NodesInserted;
+
+        public event EventHandler<TreeModelEventArgs> NodesRemoved;
+
+        // Methods
+        public InventoryTreeModel(InventoryManager manager, Inventory inventory, InventoryNode root)
+            : this(manager, inventory, root, (InventoryType[])Enum.GetValues(typeof(InventoryType)))
         {
-            Client = client;
-            Manager = client.Inventory;
-            AssetManager = client.Assets;
-            Inventory = Manager.Store;
-            
-            Inventory.OnInventoryObjectUpdated += new Inventory.InventoryObjectUpdated(Inventory_OnInventoryBaseUpdated);
-            Inventory.OnInventoryObjectRemoved += new Inventory.InventoryObjectRemoved(Inventory_OnInventoryBaseRemoved);
-            form = new Form();
         }
 
-        public void ShowInventory()
+        public InventoryTreeModel(InventoryManager manager, Inventory inventory, InventoryNode root, InventoryType[] displayedTypes)
         {
-            if (Tree != null)
-                Form.Controls.Remove(Tree);
-            TreeModel model = ConstructTreeModel();
-            Tree = new TreeViewAdv();
-            NodeTextBox textBox = new NodeTextBox();
-            textBox.DataPropertyName = "Text";
-            textBox.Parent = Tree;
-            textBox.EditEnabled = false; // Rename not supported yet.
-            Tree.NodeControls.Add(textBox);
-
-            Tree.Dock = DockStyle.Fill;
-            Tree.Model = model;
-            Tree.SelectionMode = Aga.Controls.Tree.TreeSelectionMode.Multi;
-            
-            Form.AutoSize = true;
-            Form.Controls.Add(Tree);
-            Tree.MouseClick += new MouseEventHandler(Tree_MouseUp);
-            //Tree.MouseUp += new MouseEventHandler(Tree_MouseUp);
-            
-            Form.Show();
-        }
-
-        delegate void VoidDelegate();
-
-        void Inventory_OnInventoryBaseUpdated(InventoryBase oldObject, InventoryBase newObject)
-        {
-            Console.WriteLine("Inventory updated: {0} ({1})", newObject.Name, newObject.UUID);
-            if (Form.Visible)
-                Form.BeginInvoke(new VoidDelegate(ShowInventory));
-        }
-
-        void Inventory_OnInventoryBaseRemoved(InventoryBase obj)
-        {
-            Console.WriteLine("Inventory removed: {0} ({1})", obj.Name, obj.UUID);
-            if (Form.Visible)
-                Form.BeginInvoke(new VoidDelegate(ShowInventory));
-        }
-
-        void  Tree_MouseUp(object sender, MouseEventArgs e)
-        {
-            if (e.Button == MouseButtons.Right) {
-
-                List<InventoryBase> selectedInventory = new List<InventoryBase>();
-                foreach (TreeNodeAdv node in Tree.SelectedNodes) {
-                    Node modelNode = node.Tag as Node;
-                    InventoryBase inv = modelNode.Tag as InventoryBase;
-                    selectedInventory.Add(inv);
-                }
-                InventoryContextMenu menu = new InventoryContextMenu(Client, Manager, AssetManager, selectedInventory);
-                menu.Show(Tree, e.Location);
+            this.DisplayedTypes = new Dictionary<InventoryType, object>();
+            this.DownloadedFolders = new Dictionary<InventoryFolder, object>();
+            this.Manager = manager;
+            this.InventoryRoot = root;
+            this.Inventory = inventory;
+            this.Inventory.OnInventoryRemoved += new Inventory.InventoryRemoved(this.Inventory_OnInventoryRemoved);
+            inventory.OnInventoryUpdated += new Inventory.InventoryUpdated(this.inventory_OnInventoryUpdated);
+            this.Inventory.OnInventoryAdded += new Inventory.InventoryAdded(this.Inventory_OnInventoryAdded);
+            this.NodeMap = new Dictionary<Node, InventoryNode>();
+            this.ReverseMap = new Dictionary<InventoryNode, Node>();
+            Node rootNode = new Node("My Inventory");
+            rootNode.Tag = this.InventoryRoot.Data;
+            this.NodeMap.Add(rootNode, this.InventoryRoot);
+            this.ReverseMap.Add(this.InventoryRoot, rootNode);
+            this.DisplayedTypes = new Dictionary<InventoryType, object>(displayedTypes.Length);
+            foreach (InventoryType type in displayedTypes)
+            {
+                this.DisplayedTypes[type] = null;
             }
         }
 
-        private TreeModel ConstructTreeModel()
+        public override IEnumerable GetChildren(TreePath treePath)
         {
-            NodeMap = new Dictionary<Node, InventoryNode>();
-
-            TreeModel model = new TreeModel();
-            PopulateNode(Inventory.RootNode, model.Root);
-            return model;
+            List<Node> children = new List<Node>();
+            if (treePath.IsEmpty())
+            {
+                children.Add(this.ReverseMap[this.InventoryRoot]);
+                return children;
+            }
+            InventoryNode invNode = this.NodeMap[treePath.LastNode as Node];
+            if (invNode.Data is InventoryFolder)
+            {
+                if (!DownloadedFolders.ContainsKey(invNode.Data as InventoryFolder))
+                {
+                    this.Manager.RequestFolderContents(invNode.Data.UUID, true, true, false, InventorySortOrder.ByName);
+                    DownloadedFolders.Add(invNode.Data as InventoryFolder, null);
+                }
+                foreach (InventoryNode child in invNode.Nodes.Values)
+                {
+                    if ((child.Data is InventoryItem) && !this.DisplayedTypes.ContainsKey((child.Data as InventoryItem).InventoryType))
+                    {
+                        continue;
+                    }
+                    if (!this.ReverseMap.ContainsKey(child))
+                    {
+                        Node treeChild = new Node(child.Data.Name);
+                        treeChild.Tag = child.Data;
+                        this.ReverseMap.Add(child, treeChild);
+                        this.NodeMap.Add(treeChild, child);
+                        Node parent = this.ReverseMap[child.Parent];
+                        parent.Nodes.Add(treeChild);
+                    }
+                    children.Add(this.ReverseMap[child]);
+                }
+            }
+            return children;
         }
 
+        private TreePath GetPath(Node node)
+        {
+            if (node == null)
+            {
+                return TreePath.Empty;
+            }
+            Stack<object> stack = new Stack<object>();
+            while (node != null)
+            {
+                stack.Push(node);
+                node = node.Parent;
+            }
+            return new TreePath(stack.ToArray());
+        }
+
+        [Obsolete]
+        private void InitializeModel()
+        {
+            this.NodeMap = new Dictionary<Node, InventoryNode>();
+            this.ReverseMap = new Dictionary<InventoryNode, Node>();
+            Node rootNode = new Node("My Inventory");
+            rootNode.Tag = this.InventoryRoot.Data;
+            this.NodeMap.Add(rootNode, this.InventoryRoot);
+            this.ReverseMap.Add(this.InventoryRoot, rootNode);
+            this.PopulateNode(this.InventoryRoot, rootNode);
+        }
+
+        private void Inventory_OnInventoryAdded(InventoryBase obj)
+        {
+            Node node = new Node(obj.Name);
+            node.Parent = this.NodeForUUID(obj.ParentUUID);
+            node.Tag = obj;
+            InventoryNode invNode = this.NodeMap[node.Parent].Nodes[obj.UUID];
+            this.ReverseMap.Add(invNode, node);
+            this.NodeMap.Add(node, invNode);
+            if (this.NodesInserted != null)
+            {
+                this.NodesInserted(null, new TreeModelEventArgs(this.GetPath(node.Parent), new object[] { node }));
+            }
+        }
+
+        private void Inventory_OnInventoryRemoved(InventoryBase obj)
+        {
+            Node node = this.NodeForUUID(obj.UUID);
+            if (node != null)
+            {
+                InventoryNode invNode = this.NodeMap[node];
+                this.NodeMap.Remove(node);
+                this.ReverseMap.Remove(invNode);
+                if (this.NodesRemoved != null)
+                {
+                    this.NodesRemoved(this, new TreeModelEventArgs(this.GetPath(node.Parent), new object[] { node }));
+                }
+            }
+        }
+
+        private void inventory_OnInventoryUpdated(InventoryBase oldObject, InventoryBase newObject)
+        {
+            Node node = this.NodeForUUID(oldObject.UUID);
+            if (node == null)
+            {
+                this.Inventory_OnInventoryAdded(newObject);
+            }
+            else
+            {
+                node.Text = newObject.Name;
+                node.Tag = newObject;
+                if (newObject.ParentUUID != oldObject.ParentUUID)
+                {
+                    this.Inventory_OnInventoryRemoved(oldObject);
+                    this.Inventory_OnInventoryAdded(newObject);
+                }
+                else if (this.NodesChanged != null)
+                {
+                    this.NodesChanged(this, new TreeModelEventArgs(this.GetPath(node.Parent), new object[] { node }));
+                }
+            }
+        }
+
+        public override bool IsLeaf(TreePath treePath)
+        {
+            return !(((Node)treePath.LastNode).Tag is InventoryFolder);
+        }
+
+        private Node NodeForUUID(LLUUID uuid)
+        {
+            foreach (KeyValuePair<InventoryNode, Node> pair in this.ReverseMap)
+            {
+                if (pair.Key.Data.UUID == uuid)
+                {
+                    return pair.Value;
+                }
+            }
+            return null;
+        }
+
+        [Obsolete]
         private void PopulateNode(InventoryNode invParent, Node treeParent)
         {
             foreach (InventoryNode invChild in invParent.Nodes.Values)
             {
                 Node treeChild = new Node(invChild.Data.Name);
                 treeChild.Tag = invChild.Data;
-                NodeMap.Add(treeChild, invChild);
+                this.NodeMap.Add(treeChild, invChild);
+                this.ReverseMap.Add(invChild, treeChild);
                 treeParent.Nodes.Add(treeChild);
-                //treeParent.Nodes.Add(treeChild);
                 if (invChild.Nodes.Count > 0)
-                    PopulateNode(invChild, treeChild);
+                {
+                    this.PopulateNode(invChild, treeChild);
+                }
             }
         }
     }
-    public class InventoryViewer : ApplicationContext
+
+
+
+    public class InventoryTreeView : TreeViewAdv
     {
-        private SecondLife Client;
-        public InventoryViewer()
+        // Fields
+        public ContextMenuStrip FolderContextMenu;
+        public ContextMenuStrip GeneralContextMenu;
+        public ContextMenuStrip ItemContextMenu;
+        public InventoryBase[] SelectedInventory;
+
+        // Events
+        public event EventHandler SelectionChanged;
+
+        // Methods
+        public InventoryTreeView()
         {
-            Client = new SecondLife();
-            Client.Self.OnInstantMessage += new MainAvatar.InstantMessageCallback(Self_OnInstantMessage);
+            base.LoadOnDemand = true;
+            base.SelectionMode = TreeSelectionMode.Multi;
+            NodeTextBox textBox = new NodeTextBox();
+            textBox.DataPropertyName = "Text";
+            textBox.Parent = this;
+            textBox.EditEnabled = false;
+            base.NodeControls.Add(textBox);
+            base.SelectionChanged += new EventHandler(this.InventoryTreeView_SelectionChanged);
         }
 
-        void Self_OnInstantMessage(LLUUID fromAgentID, string fromAgentName, LLUUID toAgentID, uint parentEstateID, LLUUID regionID, LLVector3 position, MainAvatar.InstantMessageDialog dialog, bool groupIM, LLUUID imSessionID, DateTime timestamp, string message, MainAvatar.InstantMessageOnline offline, byte[] binaryBucket, Simulator simulator)
+        private void InventoryTreeView_SelectionChanged(object sender, EventArgs e)
+        {
+            ITreeModel model = base.Model;
+            this.SelectedInventory = new InventoryBase[base.SelectedNodes.Count];
+            ReadOnlyCollection<TreeNodeAdv> selectedNodes = base.SelectedNodes;
+            int index = 0;
+            bool folders = false;
+            bool items = false;
+            foreach (TreeNodeAdv node in selectedNodes)
+            {
+                Node innerNode = node.Tag as Node;
+                this.SelectedInventory[index] = innerNode.Tag as InventoryBase;
+                folders |= this.SelectedInventory[index] is InventoryFolder;
+                items |= this.SelectedInventory[index] is InventoryItem;
+                index++;
+            }
+            if (this.SelectionChanged != null)
+            {
+                this.SelectionChanged(this, e);
+            }
+            if (folders && !items)
+            {
+                base.BeginInvoke(new ContextMenuStripFunc(this.SetContextMenuStrip), new object[] { this.FolderContextMenu });
+            }
+            else if (items && !folders)
+            {
+                base.BeginInvoke(new ContextMenuStripFunc(this.SetContextMenuStrip), new object[] { this.ItemContextMenu });
+            }
+            else
+            {
+                base.BeginInvoke(new ContextMenuStripFunc(this.SetContextMenuStrip), new object[] { this.GeneralContextMenu });
+            }
+        }
+
+        public void SetContextMenuStrip(ContextMenuStrip strip)
+        {
+            this.ContextMenuStrip = strip;
+        }
+
+        // Nested Types
+        public delegate void ContextMenuStripFunc(ContextMenuStrip bar);
+    }
+
+
+
+    public class InventoryViewer : ApplicationContext
+    {
+        // Fields
+        private Dictionary<LLUUID, AssetTransferAction> AssetTransfers = new Dictionary<LLUUID, AssetTransferAction>();
+        private SecondLife Client = new SecondLife();
+        private InventoryTreeModel inventoryModel;
+        private InventoryTreeView inventoryView;
+        private Form mainWindow = new Form();
+        private static InventoryViewer Viewer;
+
+        // Methods
+        public InventoryViewer()
+        {
+            this.Client.Self.OnInstantMessage += new MainAvatar.InstantMessageCallback(this.Self_OnInstantMessage);
+            this.Client.Assets.OnAssetReceived += new AssetManager.AssetReceivedCallback(this.Assets_OnAssetReceived);
+            ContextMenuStrip ItemMenu = new ContextMenuStrip();
+            ItemMenu.Items.Add(new ToolStripMenuItem("Get Info", null, new EventHandler(this.getInfo_Click)));
+            ItemMenu.Items.Add(new ToolStripMenuItem("Print Asset", null, new EventHandler(this.printAsset_Click)));
+            ItemMenu.Items.Add(new ToolStripMenuItem("Save Asset...", null, new EventHandler(this.saveAsset_Click)));
+            ItemMenu.Items.Add(new ToolStripMenuItem("Delete", null, new EventHandler(this.delete_Click)));
+            ContextMenuStrip FolderMenu = new ContextMenuStrip();
+            FolderMenu.Items.Add(new ToolStripMenuItem("Get Info", null, new EventHandler(this.getInfo_Click)));
+            FolderMenu.Items.Add(new ToolStripMenuItem("Delete", null, new EventHandler(this.delete_Click)));
+            FolderMenu.Items.Add(new ToolStripMenuItem("Empty", null, new EventHandler(this.empty_Click)));
+            ContextMenuStrip GeneralMenu = new ContextMenuStrip();
+            GeneralMenu.Items.Add(new ToolStripMenuItem("Get Info", null, new EventHandler(this.getInfo_Click)));
+            GeneralMenu.Items.Add(new ToolStripMenuItem("Delete", null, new EventHandler(this.delete_Click)));
+            this.inventoryView = new InventoryTreeView();
+            this.inventoryView.GeneralContextMenu = GeneralMenu;
+            this.inventoryView.FolderContextMenu = FolderMenu;
+            this.inventoryView.ItemContextMenu = ItemMenu;
+            this.inventoryView.Dock = DockStyle.Fill;
+            this.mainWindow.Controls.Add(this.inventoryView);
+            this.mainWindow.FormClosing += new FormClosingEventHandler(this.Form_FormClosing);
+            this.mainWindow.Show();
+        }
+
+        private void Assets_OnAssetReceived(AssetDownload transfer, Asset asset)
+        {
+            AssetTransferAction action;
+            if (this.AssetTransfers.TryGetValue(transfer.ID, out action))
+            {
+                if (asset != null)
+                {
+                    action(asset);
+                }
+                else
+                {
+                    Console.WriteLine("Asset transfer failed: {0}", transfer.Status);
+                }
+                this.AssetTransfers.Remove(transfer.ID);
+            }
+        }
+
+        #region Context Menu Handlers
+        private void delete_Click(object sender, EventArgs e)
+        {
+            Console.WriteLine("Delete not implemented yet.");
+        }
+
+        private void empty_Click(object sender, EventArgs e)
+        {
+            Console.WriteLine("Empty not implemented yet.");
+        }
+
+        private void getInfo_Click(object sender, EventArgs e)
+        {
+            foreach (InventoryBase inv in this.inventoryView.SelectedInventory)
+            {
+                Console.WriteLine("{0}: {1} ({2})", (inv is InventoryFolder) ? "Folder" : "Item", inv.Name, inv.UUID);
+                Console.WriteLine("\tOwner: {0}", inv.OwnerID);
+                Console.WriteLine("\tParent: {0}", inv.ParentUUID);
+                if (inv is InventoryItem)
+                {
+                    InventoryItem item = inv as InventoryItem;
+                    Console.WriteLine("\tAsset Type: {0}", item.AssetType);
+                    Console.WriteLine("\tAsset UUID: {0}", item.AssetUUID);
+                    Console.WriteLine("\tCreation date: {0}", item.CreationDate);
+                    Console.WriteLine("\tCreator ID: {0}", item.CreatorID);
+                    Console.WriteLine("\tDescription: {0}", item.Description);
+                    Console.WriteLine("\tGroup ID: {0}", item.GroupID);
+                    Console.WriteLine("\tGroup owned: {0}", item.GroupOwned);
+                    Console.WriteLine("\tInventory Type: {0}", item.InventoryType);
+                    Console.WriteLine("\tPermissions: {0}", item.Permissions);
+                    Console.WriteLine("\tSale Type: {0}", item.SaleType);
+                    Console.WriteLine("\tSale Price: {0}", item.SalePrice);
+                }
+                else if (inv is InventoryFolder)
+                {
+                    InventoryFolder folder = inv as InventoryFolder;
+                    Console.WriteLine("\tDescendants: {0}", folder.DescendentCount);
+                    Console.WriteLine("\tPrefered Type: {0}", folder.PreferredType);
+                    Console.WriteLine("\tVersion: {0}", folder.Version);
+                }
+                else
+                {
+                    Console.WriteLine("Unknown inventory type {0}", inv.GetType());
+                }
+            }
+        }
+
+        private void printAsset_Click(object sender, EventArgs e)
+        {
+            foreach (InventoryBase inv in this.inventoryView.SelectedInventory)
+            {
+                if (inv is InventoryItem)
+                {
+                    InventoryItem item = inv as InventoryItem;
+                    LLUUID transferID = this.Client.Assets.RequestInventoryAsset(item.AssetUUID, item.UUID, LLUUID.Zero, item.OwnerID, item.AssetType, false);
+                    this.AssetTransfers.Add(transferID, new AssetTransferAction(this.PrintAsset));
+                }
+            }
+        }
+
+        private void saveAsset_Click(object sender, EventArgs e)
+        {
+            foreach (InventoryBase inv in this.inventoryView.SelectedInventory)
+            {
+                if (inv is InventoryItem)
+                {
+                    InventoryItem item = inv as InventoryItem;
+                    LLUUID transferID = this.Client.Assets.RequestInventoryAsset(item.AssetUUID, item.UUID, LLUUID.Zero, item.OwnerID, item.AssetType, false);
+                    this.AssetTransfers.Add(transferID, new AssetTransferAction(this.SaveAsset));
+                }
+            }
+        }
+        #endregion
+
+        private delegate void AssetTransferAction(Asset asset);
+
+        public void PrintAsset(Asset asset)
+        {
+            if (asset is AssetScriptText)
+            {
+                AssetScriptText script = asset as AssetScriptText;
+                Console.WriteLine(script.Source);
+            }
+            else if (asset is AssetNotecard)
+            {
+                AssetNotecard note = asset as AssetNotecard;
+                Console.WriteLine(note.Text);
+            }
+            else
+            {
+                Console.WriteLine("Unable to handle asset type {0}", asset.GetType());
+            }
+        }
+
+        public void SaveAsset(Asset asset)
+        {
+            Console.WriteLine("SaveAsset not implemented yet!");
+        }
+
+
+        public void ShowInventory()
+        {
+            Console.WriteLine("Creating base model...");
+            this.inventoryModel = new InventoryTreeModel(this.Client.Inventory, this.Client.Inventory.Store, this.Client.Inventory.Store.RootNode);
+            this.inventoryView.Model = this.inventoryModel;
+            Console.WriteLine("Done!");
+        }
+
+        private void Self_OnInstantMessage(LLUUID fromAgentID, string fromAgentName, LLUUID toAgentID, uint parentEstateID, LLUUID regionID, LLVector3 position, MainAvatar.InstantMessageDialog dialog, bool groupIM, LLUUID imSessionID, DateTime timestamp, string message, MainAvatar.InstantMessageOnline offline, byte[] binaryBucket, Simulator simulator)
         {
             Console.WriteLine("IM ({0}): {1}", fromAgentName, message);
         }
 
         public bool Login(string first, string last, string password, out string message)
         {
-            bool success = Client.Network.Login(first, last, password, "InventoryViewer", "Christopher Omega");
-            message = Client.Network.LoginMessage;
+            bool success = this.Client.Network.Login(first, last, password, "InventoryViewer", "Christopher Omega");
+            message = this.Client.Network.LoginMessage;
             return success;
-        }
-
-        public void ShowInventory()
-        {
-            // Populate inventory with nodes:
-            Console.WriteLine("Populating inventory...");
-            Client.Inventory.RequestFolderContents(Client.Inventory.Store.RootFolder.UUID, Client.Network.AgentID, true, true, true, InventorySortOrder.ByName);
-            //IAsyncResult req = Client.Inventory.BeginFindObjects(Client.Inventory.Store.RootFolder.UUID, ".*", true, true, null, null);
-            //Client.Inventory.EndFindObjects(req);
-            Console.WriteLine("Inventory populated, displaying...");
-
-            InventoryWindow window = new InventoryWindow(Client);
-            window.ShowInventory();
-            window.Form.FormClosing += new FormClosingEventHandler(Form_FormClosing);
-        }
-
-        void Form_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            Logout();
         }
 
         public void Logout()
         {
-            Client.Network.Logout();
-            ExitThread();
+            this.Client.Network.Logout();
+            base.ExitThread();
         }
 
+        private void Form_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            this.Logout();
+        }
 
+        private static void Console_CancelKeyPress(object sender, ConsoleCancelEventArgs e)
+        {
+            Viewer.Logout();
+        }
 
-        static InventoryViewer Viewer;
-        static void Main(string[] args)
+        private static void Main(string[] args)
         {
             if (args.Length < 3)
             {
                 Console.WriteLine("Usage: InventoryViewer first last password");
-                return;
-            }
-
-            Console.CancelKeyPress += new ConsoleCancelEventHandler(Console_CancelKeyPress);
-
-            Viewer = new InventoryViewer();
-
-            string message;
-            if (Viewer.Login(args[0], args[1], args[2], out message))
-            {
-                Viewer.ShowInventory(); 
             }
             else
             {
-                Console.WriteLine("Login failed: {0}", message);
+                string message;
+                Console.CancelKeyPress += new ConsoleCancelEventHandler(InventoryViewer.Console_CancelKeyPress);
+                Viewer = new InventoryViewer();
+                if (Viewer.Login(args[0], args[1], args[2], out message))
+                {
+                    Viewer.ShowInventory();
+                }
+                else
+                {
+                    Console.WriteLine("Login failed: {0}", message);
+                }
+                Application.Run(Viewer);
             }
-            Application.Run(Viewer);
-        }
-
-        static void Console_CancelKeyPress(object sender, ConsoleCancelEventArgs e)
-        {
-            Viewer.Logout();
         }
     }
 }
