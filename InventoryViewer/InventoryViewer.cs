@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
@@ -75,9 +75,9 @@ namespace InventoryViewer
             this.Manager = manager;
             this.InventoryRoot = root;
             this.Inventory = inventory;
-            this.Inventory.OnInventoryRemoved += new Inventory.InventoryRemoved(this.Inventory_OnInventoryRemoved);
-            inventory.OnInventoryUpdated += new Inventory.InventoryUpdated(this.inventory_OnInventoryUpdated);
-            this.Inventory.OnInventoryAdded += new Inventory.InventoryAdded(this.Inventory_OnInventoryAdded);
+            this.Inventory.OnInventoryObjectRemoved += new Inventory.InventoryObjectRemoved(this.Inventory_OnInventoryRemoved);
+            inventory.OnInventoryObjectUpdated += new Inventory.InventoryObjectUpdated(this.inventory_OnInventoryUpdated);
+            this.Inventory.OnInventoryObjectAdded += new Inventory.InventoryObjectAdded(this.Inventory_OnInventoryAdded);
             //this.NodeMap = new Dictionary<Node, InventoryNode>();
             this.ReverseMap = new Dictionary<InventoryNode, Node>();
             Node rootNode = new Node("My Inventory");
@@ -104,7 +104,8 @@ namespace InventoryViewer
             InventoryNode invNode = Inventory.GetNodeFor(invBase.UUID);//this.NodeMap[treePath.LastNode as Node];
             if (invNode.Data is InventoryFolder)
             {
-                Manager.BeginRequestFolderContents(invNode.Data.UUID, Inventory.Owner, true, true, false, InventorySortOrder.ByName, null, null);
+                Console.WriteLine("Requesting {0}'s ({1}) contents...", invNode.Data.Name, invNode.Data.UUID);
+                Manager.RequestFolderContents(invNode.Data.UUID, Inventory.Owner, true, true, InventorySortOrder.ByName);
                 foreach (InventoryNode child in invNode.Nodes.Values)
                 {
                     if ((child.Data is InventoryItem) && !this.DisplayedTypes.ContainsKey((child.Data as InventoryItem).InventoryType))
@@ -185,9 +186,13 @@ namespace InventoryViewer
 
         private void inventory_OnInventoryUpdated(InventoryBase oldObject, InventoryBase newObject)
         {
-            Node node = this.NodeForUUID(oldObject.UUID);
-            if (node == null)
+            Console.WriteLine("OnInventoryUpdated({0}, {1})",
+                oldObject == null ? "null" : oldObject.Name,
+                newObject == null ? "null" : newObject.Name);
+            Node node = NodeForUUID(oldObject.UUID);
+            if (NodeForUUID(oldObject.UUID) == null)
             {
+                // It was in the inventory store before, but we didn't know about it:
                 this.Inventory_OnInventoryAdded(newObject);
             }
             else
@@ -321,12 +326,11 @@ namespace InventoryViewer
         private InventoryTreeModel inventoryModel;
         private InventoryTreeView inventoryView;
         private Form mainWindow = new Form();
-        private static InventoryViewer Viewer;
 
         // Methods
-        public InventoryViewer()
+        public InventoryViewer(string first, string last, string password)
         {
-            this.Client.Self.OnInstantMessage += new MainAvatar.InstantMessageCallback(this.Self_OnInstantMessage);
+            //this.Client.Self.OnInstantMessage += new MainAvatar.InstantMessageCallback(this.Self_OnInstantMessage);
             this.Client.Assets.OnAssetReceived += new AssetManager.AssetReceivedCallback(this.Assets_OnAssetReceived);
             ContextMenuStrip ItemMenu = new ContextMenuStrip();
             ItemMenu.Items.Add(new ToolStripMenuItem("Get Info", null, new EventHandler(this.getInfo_Click)));
@@ -348,6 +352,23 @@ namespace InventoryViewer
             this.mainWindow.Controls.Add(this.inventoryView);
             this.mainWindow.FormClosing += new FormClosingEventHandler(this.Form_FormClosing);
             this.mainWindow.Show();
+            MainForm = mainWindow;
+
+            LoginParams loginp = Client.Network.DefaultLoginParams(first, last, password, "InventoryViewer by Christopher Omega", "0.1");
+            Client.Network.OnLogin +=
+                delegate (LoginStatus status, string message) {
+                    if (status == LoginStatus.Success)
+                    {
+                        Console.WriteLine("Login success: " + message);
+                        ShowInventory();
+                    }
+                    else if (status == LoginStatus.Failed)
+                    {
+                        Console.WriteLine("Login failed: " + message);
+                        Application.Exit();
+                    }
+                };
+            Client.Network.BeginLogin(loginp);
         }
 
         private void Assets_OnAssetReceived(AssetDownload transfer, Asset asset)
@@ -475,17 +496,10 @@ namespace InventoryViewer
             Console.WriteLine("Done!");
         }
 
-        private void Self_OnInstantMessage(LLUUID fromAgentID, string fromAgentName, LLUUID toAgentID, uint parentEstateID, LLUUID regionID, LLVector3 position, MainAvatar.InstantMessageDialog dialog, bool groupIM, LLUUID imSessionID, DateTime timestamp, string message, MainAvatar.InstantMessageOnline offline, byte[] binaryBucket, Simulator simulator)
-        {
-            Console.WriteLine("IM ({0}): {1}", fromAgentName, message);
-        }
-
-        public bool Login(string first, string last, string password, out string message)
-        {
-            bool success = this.Client.Network.Login(first, last, password, "InventoryViewer", "Christopher Omega");
-            message = this.Client.Network.LoginMessage;
-            return success;
-        }
+        //private void Self_OnInstantMessage(LLUUID fromAgentID, string fromAgentName, LLUUID toAgentID, uint parentEstateID, LLUUID regionID, LLVector3 position, MainAvatar.InstantMessageDialog dialog, bool groupIM, LLUUID imSessionID, DateTime timestamp, string message, MainAvatar.InstantMessageOnline offline, byte[] binaryBucket, Simulator simulator)
+        //{
+        //    Console.WriteLine("IM ({0}): {1}", fromAgentName, message);
+        //}
 
         public void Logout()
         {
@@ -498,6 +512,7 @@ namespace InventoryViewer
             this.Logout();
         }
 
+        private static InventoryViewer Viewer;
         private static void Console_CancelKeyPress(object sender, ConsoleCancelEventArgs e)
         {
             Viewer.Logout();
@@ -511,17 +526,8 @@ namespace InventoryViewer
             }
             else
             {
-                string message;
                 Console.CancelKeyPress += new ConsoleCancelEventHandler(InventoryViewer.Console_CancelKeyPress);
-                Viewer = new InventoryViewer();
-                if (Viewer.Login(args[0], args[1], args[2], out message))
-                {
-                    Viewer.ShowInventory();
-                }
-                else
-                {
-                    Console.WriteLine("Login failed: {0}", message);
-                }
+                Viewer = new InventoryViewer(args[0], args[1], args[2]);
                 Application.Run(Viewer);
             }
         }
