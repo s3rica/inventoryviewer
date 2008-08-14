@@ -59,7 +59,6 @@
   -->
   <ItemGroup>
     <Compile Include="InventoryViewer.cs">
-      <SubType>Component</SubType>
     </Compile>
   </ItemGroup>
   <ItemGroup>
@@ -67,9 +66,17 @@
       <SpecificVersion>False</SpecificVersion>
       <HintPath>lib\Aga.Controls.dll</HintPath>
     </Reference>
-    <Reference Include="libsecondlife, Version=0.9.0.0, Culture=neutral, processorArchitecture=MSIL">
+    <Reference Include="OpenMetaverse, Version=1.0.0.39748, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\..\libsl\bin\libsecondlife.dll</HintPath>
+      <HintPath>..\..\libomv-admin\trunk\bin\OpenMetaverse.dll</HintPath>
+    </Reference>
+    <Reference Include="OpenMetaverse.Utilities, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\libomv-admin\trunk\bin\OpenMetaverse.Utilities.dll</HintPath>
+    </Reference>
+    <Reference Include="OpenMetaverseTypes, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\libomv-admin\trunk\bin\OpenMetaverseTypes.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Drawing" />
