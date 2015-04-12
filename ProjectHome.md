@@ -1,0 +1,1 @@
+This project uses [libOpenMetaverse](http://openmv.org) (formerly [libsecondlife](http://libsecondlife.org)) to provide a simple graphical interface for viewing your [Second Life](http://secondlife.com) inventory.
